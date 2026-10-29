@@ -24,13 +24,25 @@ public class ParcelRepository {
         this.jdbc = jdbc;
     }
 
-    /** A new parcel, holding, in this door; its database id. */
-    public long insert(long towerId, String flat, SizeClass sizeClass, long doorId, Instant droppedAt) {
+    /** A new parcel, holding, in this door, with its code's hash and expiry; its database id. */
+    public long insert(long towerId, String flat, SizeClass sizeClass, long doorId, Instant droppedAt,
+                       String codeHash, Instant codeExpiresAt) {
         KeyHolder key = new GeneratedKeyHolder();
-        jdbc.sql("INSERT INTO parcels (tower_id, flat, size_class, door_id, dropped_at, state) "
-                        + "VALUES (?, ?, ?, ?, ?, 'holding')")
-               .params(towerId, flat, sizeClass.name(), doorId, droppedAt).update(key, "id");
+
+        jdbc.sql("INSERT INTO parcels (tower_id, flat, size_class, door_id, dropped_at, "
+                        + "state, code_hash, code_expires_at) "
+                        + "VALUES (?, ?, ?, ?, ?, 'holding', ?, ?)")
+                .params(towerId, flat, sizeClass.name(), doorId, droppedAt, codeHash, codeExpiresAt)
+                .update(key, "id");
+
         return key.getKeyAs(Long.class);
+    }
+
+    /** Whether a parcel already holds this code hash, unused (a new code must differ). */
+    public boolean codeInUse(String codeHash) {
+        return jdbc.sql("SELECT count(*) FROM parcels WHERE code_hash = ? AND code_used_at IS NULL")
+                .param(codeHash)
+                .query(Long.class).single() > 0;
     }
 
     public Optional<Row> find(long id) {

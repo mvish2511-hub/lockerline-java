@@ -9,7 +9,9 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  *
  * @param freeWindowHours how long a pickup code stays valid after the drop
  * @param seedDir         the folder that holds doors.csv and residents.csv
+ * @param codeHashKey     the key of the keyed hash pickup codes are stored as; never kept in the database
  */
 @ConfigurationProperties
-public record LockerLineSettings(@DefaultValue("48") int freeWindowHours, @DefaultValue("seed") String seedDir) {
+public record LockerLineSettings(@DefaultValue("48") int freeWindowHours,@DefaultValue("seed") String seedDir,
+        @DefaultValue("dev-only-change-me") String codeHashKey) {
 }
