@@ -19,7 +19,8 @@ public class PickupController {
     }
 
     @PostMapping("/pickups")
-    public void pickup(@Valid @RequestBody PickupRequest body) {
-        pickups.pickup(TOWER, body.code());
+    public PickupResponse pickup(@Valid @RequestBody PickupRequest body) {
+        return pickups.pickup(TOWER, body.code());
     }
+
 }

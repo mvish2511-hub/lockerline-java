@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS doors (
 
 -- A parcel in a door. Its public id (P001) is made from `id`; the database id itself is never shown.
 -- The pickup code is stored only as a keyed hash, with the moment it expires.
+-- A collected parcel keeps its dwell - how long it waited - stored, not recomputed on read.
 CREATE TABLE IF NOT EXISTS parcels (
     id              BIGINT AUTO_INCREMENT PRIMARY KEY,
     tower_id        BIGINT                   NOT NULL REFERENCES towers (id),
@@ -29,10 +30,9 @@ CREATE TABLE IF NOT EXISTS parcels (
     state           VARCHAR(10)              NOT NULL,
     code_hash       VARCHAR(64)              NOT NULL,
     code_expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    code_used_at    TIMESTAMP WITH TIME ZONE
+    code_used_at    TIMESTAMP WITH TIME ZONE,
+    dwell_seconds   BIGINT
 );
-
-
 
 CREATE TABLE IF NOT EXISTS residents (
     id       BIGINT AUTO_INCREMENT PRIMARY KEY,

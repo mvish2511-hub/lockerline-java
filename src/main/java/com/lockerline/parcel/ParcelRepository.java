@@ -38,30 +38,48 @@ public class ParcelRepository {
         return key.getKeyAs(Long.class);
     }
 
-    /** Whether a parcel already holds this code hash, unused (a new code must differ). */
+    /** Whether a parcel still waiting in its door already has this code hash. */
     public boolean codeInUse(String codeHash) {
         return jdbc.sql("SELECT count(*) FROM parcels WHERE code_hash = ? AND code_used_at IS NULL")
                 .param(codeHash)
                 .query(Long.class).single() > 0;
     }
 
-    /** A parcel as a pickup sees it: its code's stored hash and expiry, and code_used_at (nothing sets it yet). */
-    public record CodeRow(long id, String codeHash, Instant codeExpiresAt, Instant codeUsedAt) {
+    /**
+     * A parcel as a pickup sees it: its code's stored hash and expiry, whether the code was used,
+     * when it was dropped and the door it is in.
+     */
+    public record CodeRow(long id, String codeHash, Instant codeExpiresAt, Instant codeUsedAt, Instant droppedAt,
+                          long doorId, String door) {
     }
 
-    /** The parcel of this tower whose code has this hash, if any (the newest, should two ever share it). */
+    /** The newest parcel of this tower whose code has this hash, if any. */
     public Optional<CodeRow> findByCodeHash(long towerId, String codeHash) {
-        return jdbc.sql("SELECT id, code_hash, code_expires_at, code_used_at FROM parcels "
-                        + "WHERE tower_id = ? AND code_hash = ? ORDER BY id DESC LIMIT 1")
+        return jdbc.sql(
+                        """
+                        SELECT p.id, p.code_hash, p.code_expires_at, p.code_used_at, p.dropped_at, p.door_id,
+                               d.no AS door
+                        FROM parcels p JOIN doors d ON d.id = p.door_id
+                        WHERE p.tower_id = ? AND p.code_hash = ? ORDER BY p.id DESC LIMIT 1""")
                 .params(towerId, codeHash)
                 .query(CodeRow.class)
                 .optional();
+    }
+
+    /** The parcel is collected: its code used, and how long it waited stored. */
+    public void collect(long id, Instant at, long dwellSeconds) {
+        jdbc.sql("UPDATE parcels SET state = 'collected', collected_at = ?, code_used_at = ?, dwell_seconds = ? "
+                        + "WHERE id = ?")
+                .params(at, at, dwellSeconds, id)
+                .update();
     }
 
     public Optional<Row> find(long id) {
         return jdbc.sql("""
                         SELECT p.id, d.no AS door, p.size_class, p.flat, p.state, p.dropped_at
                         FROM parcels p JOIN doors d ON d.id = p.door_id WHERE p.id = ?""")
-                .param(id).query(Row.class).optional();
+                .param(id)
+                .query(Row.class)
+                .optional();
     }
 }

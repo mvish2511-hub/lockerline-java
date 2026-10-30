@@ -54,13 +54,14 @@ public class DropService {
             throw new NoSuchFlat(flat);
         }
 
-        DoorRepository.Row door = doors.lowestFree(towerId, size).orElseThrow(() -> new NoDoorFree(size, doors.freeSizes(towerId)));
+        DoorRepository.Row door = doors.lowestFree(towerId, size)
+                .orElseThrow(() -> new NoDoorFree(size, doors.freeSizes(towerId)));
 
         Instant now = clock.instant().truncatedTo(ChronoUnit.SECONDS);
         Instant expires = now.plus(Duration.ofHours(settings.freeWindowHours()));
         String code = codes.newCode();
 
-        while (parcels.codeInUse(codes.hash(code))) { // no two parcels share a code
+        while (parcels.codeInUse(codes.hash(code))) { // two waiting parcels never share a code
             code = codes.newCode();
         }
 
