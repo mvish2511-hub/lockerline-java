@@ -11,8 +11,10 @@ import org.springframework.transaction.annotation.Transactional;
 import com.lockerline.config.LockerLineSettings;
 import com.lockerline.door.DoorRepository;
 import com.lockerline.door.DoorService;
+import com.lockerline.door.ResidentRepository;
 import com.lockerline.door.SizeClass;
 import com.lockerline.error.NoDoorFree;
+import com.lockerline.error.NoSuchFlat;
 import com.lockerline.parcel.EventLog;
 import com.lockerline.parcel.ParcelIds;
 import com.lockerline.parcel.ParcelRepository;
@@ -23,6 +25,7 @@ public class DropService {
 
     private final DoorService doorService;
     private final DoorRepository doors;
+    private final ResidentRepository residents;
     private final ParcelRepository parcels;
     private final PickupCodes codes;
     private final EventLog events;
@@ -32,6 +35,7 @@ public class DropService {
     public DropService(
             DoorService doorService,
             DoorRepository doors,
+            ResidentRepository residents,
             ParcelRepository parcels,
             PickupCodes codes,
             EventLog events,
@@ -40,6 +44,7 @@ public class DropService {
 
         this.doorService = doorService;
         this.doors = doors;
+        this.residents = residents;
         this.parcels = parcels;
         this.codes = codes;
         this.events = events;
@@ -51,6 +56,10 @@ public class DropService {
     public DropResponse drop(String tower, SizeClass sizeClass, String flat) {
 
         long towerId = doorService.towerId(tower);
+
+        if (!residents.exists(towerId, flat)) {
+            throw new NoSuchFlat(flat);
+        }
 
         var door = doors.lowestFree(towerId, sizeClass)
                 .orElseThrow(() ->

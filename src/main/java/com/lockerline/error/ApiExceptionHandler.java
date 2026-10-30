@@ -1,108 +1,199 @@
 package com.lockerline.error;
 
 import java.net.URI;
-import java.util.List;
 import java.util.Map;
 
-import org.springframework.beans.TypeMismatchException;
-import org.springframework.http.HttpHeaders;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolationException;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.HttpStatusCode;
+import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
-import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 import com.fasterxml.jackson.databind.JsonMappingException;
+import com.lockerline.config.RequestIdFilter;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 
-/**
- * The one place that turns errors into a ProblemDetail (application/problem+json).
- * Spring's own errors - an unknown path, a wrong method - as ProblemDetails; this adds the domain refusals and the
- * requests that are not valid: a bad query value, a body that fails Bean Validation, a body Jackson cannot read.
- */
+@Order(Ordered.HIGHEST_PRECEDENCE)
 @RestControllerAdvice
-public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
+public class ApiExceptionHandler {
+
+    private static final Logger log =
+            LoggerFactory.getLogger(ApiExceptionHandler.class);
+
+    private ResponseEntity<ProblemDetail> response(ProblemDetail problem) {
+        return ResponseEntity
+                .status(problem.getStatus())
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(problem);
+    }
+
+    private ProblemDetail problem(
+            HttpStatus status,
+            String type,
+            String title,
+            String detail,
+            HttpServletRequest request) {
+
+        ProblemDetail result =
+                ProblemDetail.forStatusAndDetail(status, detail);
+
+        result.setType(URI.create(type));
+        result.setTitle(title);
+        result.setInstance(URI.create(request.getRequestURI()));
+
+        return result;
+    }
 
     @ExceptionHandler(DomainException.class)
-    public ProblemDetail refusal(DomainException e) {
-        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
-                HttpStatusCode.valueOf(e.status()), e.getMessage());
+    public ResponseEntity<ProblemDetail> refusal(
+            DomainException e,
+            HttpServletRequest request) {
 
-        problem.setType(URI.create(e.type()));
-        problem.setTitle(e.title());
-        e.properties().forEach(problem::setProperty);
+        ProblemDetail result = problem(
+                HttpStatus.valueOf(e.status()),
+                e.type(),
+                e.title(),
+                e.getMessage(),
+                request);
 
-        return problem;
-    }
-
-    /**
-     * A query value that does not fit its type - ?size=XL, ?state=open - is 400 /errors/validation.
-     */
-    @Override
-    protected ResponseEntity<Object> handleTypeMismatch(
-            TypeMismatchException ex, HttpHeaders headers,
-            HttpStatusCode status, WebRequest request) {
-
-        String field = ex instanceof MethodArgumentTypeMismatchException m
-                ? m.getName() : ex.getPropertyName();
-
-        return handleExceptionInternal(ex,
-                validation(List.of(error(field, "'" + ex.getValue()
-                        + "' is not an allowed value"))),
-                headers, HttpStatus.BAD_REQUEST, request);
-    }
-
-    /**
-     * A body that fails Bean Validation (@NotNull, @NotBlank): 400 /errors/validation naming every field.
-     */
-    @Override
-    protected ResponseEntity<Object> handleMethodArgumentNotValid(
-                                                                  MethodArgumentNotValidException ex,
-                                                                  HttpHeaders headers, HttpStatusCode status,
-                                                                  WebRequest request) {
-
-        List<Map<String, String>> errors = ex.getBindingResult().getFieldErrors().stream()
-                .map(f -> error(f.getField(), String.valueOf(f.getDefaultMessage()))).toList();
-
-        return handleExceptionInternal(ex, validation(errors), headers, HttpStatus.BAD_REQUEST, request);
-    }
-
-    /**
-     * A body Jackson cannot read - {"sizeClass": "XL"} fails before Bean Validation ever runs - is still 400
-     * /errors/validation, naming the field Jackson stopped at.
-     */
-    @Override
-    protected ResponseEntity<Object> handleHttpMessageNotReadable(
-                                                                  HttpMessageNotReadableException ex,
-                                                                  HttpHeaders headers, HttpStatusCode status,
-                                                                  WebRequest request) {
-
-        String field = "body";
-        if (ex.getCause() instanceof JsonMappingException json && !json.getPath().isEmpty()) {
-            field = json.getPath().get(json.getPath().size() - 1).getFieldName();
+        for (Map.Entry<String, Object> entry : e.properties().entrySet()) {
+            result.setProperty(entry.getKey(), entry.getValue());
         }
 
-        return handleExceptionInternal(ex, validation(List.of(error(field, "this value cannot be read"))),
-                headers, HttpStatus.BAD_REQUEST, request);
+        return response(result);
     }
 
-    private static Map<String, String> error(String field, String message) {
-        return Map.of("field", String.valueOf(field), "message", message);
+    @ExceptionHandler({
+            MethodArgumentTypeMismatchException.class,
+            HttpMessageNotReadableException.class,
+            MethodArgumentNotValidException.class,
+            HandlerMethodValidationException.class,
+            ConstraintViolationException.class
+    })
+    public ResponseEntity<ProblemDetail> validation(
+            Exception e,
+            HttpServletRequest request) {
+
+        ProblemDetail result = problem(
+                HttpStatus.BAD_REQUEST,
+                "/errors/validation",
+                "Invalid request",
+                "The request is not valid",
+                request);
+
+        if (e instanceof MethodArgumentTypeMismatchException mismatch) {
+            result.setProperty(
+                    "errors",
+                    new Object[] {
+                            Map.of(
+                                    "field", mismatch.getName(),
+                                    "message", "This value is not allowed")
+                    });
+
+        } else if (e instanceof MethodArgumentNotValidException invalid) {
+            result.setProperty(
+                    "errors",
+                    invalid.getBindingResult().getFieldErrors().stream()
+                            .map(error -> Map.of(
+                                    "field", error.getField(),
+                                    "message",
+                                    error.getDefaultMessage() == null
+                                            ? "This value is not valid"
+                                            : error.getDefaultMessage()))
+                            .toList());
+
+        } else if (e instanceof HttpMessageNotReadableException readable) {
+            String field = "body";
+            String message = "This request body cannot be read";
+
+            Throwable cause = readable.getCause();
+
+            if (cause instanceof JsonMappingException mapping
+                    && !mapping.getPath().isEmpty()) {
+                JsonMappingException.Reference reference =
+                        mapping.getPath().get(mapping.getPath().size() - 1);
+
+                if (reference.getFieldName() != null) {
+                    field = reference.getFieldName();
+                }
+
+                message = "This value cannot be read";
+            }
+
+            result.setProperty(
+                    "errors",
+                    new Object[] {
+                            Map.of("field", field, "message", message)
+                    });
+
+        } else if (e instanceof HandlerMethodValidationException) {
+            result.setProperty(
+                    "errors",
+                    new Object[] {
+                            Map.of(
+                                    "field", "request",
+                                    "message", "A request parameter is not valid")
+                    });
+
+        } else if (e instanceof ConstraintViolationException violation) {
+            result.setProperty(
+                    "errors",
+                    violation.getConstraintViolations().stream()
+                            .map(v -> Map.of(
+                                    "field", v.getPropertyPath().toString(),
+                                    "message", v.getMessage()))
+                            .toList());
+        }
+
+        return response(result);
     }
 
-    private static ProblemDetail validation(List<Map<String, String>> errors) {
-        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
-                HttpStatus.BAD_REQUEST, "The request is not valid");
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ProblemDetail> methodNotAllowed(
+            HttpRequestMethodNotSupportedException e,
+            HttpServletRequest request) {
 
-        problem.setType(URI.create("/errors/validation"));
-        problem.setTitle("Invalid request");
-        problem.setProperty("errors", errors);
+        ProblemDetail result = problem(
+                HttpStatus.METHOD_NOT_ALLOWED,
+                "/errors/method-not-allowed",
+                "Method not allowed",
+                "This HTTP method is not allowed for this endpoint",
+                request);
 
-        return problem;
+        return response(result);
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ProblemDetail> unexpected(
+            Exception e,
+            HttpServletRequest request) {
+
+        String requestId = MDC.get(RequestIdFilter.KEY);
+
+        log.error("unexpected error requestId={}", requestId, e);
+
+        ProblemDetail result = problem(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                "/errors/internal",
+                "Internal error",
+                "Something went wrong on our side; quote the request id if you report it",
+                request);
+
+        result.setProperty("requestId", requestId);
+
+        return response(result);
     }
 }
