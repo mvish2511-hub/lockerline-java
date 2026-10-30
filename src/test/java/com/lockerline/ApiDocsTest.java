@@ -1,6 +1,6 @@
 package com.lockerline;
 
-import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -17,7 +17,9 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import com.lockerline.parcel.ParcelService;
 
-/** The API docs another team builds against, and the one shape every error has - a 500 included. */
+/**
+ * The API docs another team builds against, and the one shape every error has - a 500 included.
+ */
 @SpringBootTest(properties = "spring.datasource.url=jdbc:h2:mem:api-docs-test")
 @AutoConfigureMockMvc
 class ApiDocsTest {
@@ -27,7 +29,7 @@ class ApiDocsTest {
 
     @MockitoSpyBean
     ParcelService parcels;
-  
+
     @Test
     void theSpecDocumentsEveryEndpointAndItsRefusals() throws Exception {
         http.perform(get("/v3/api-docs"))
@@ -43,7 +45,7 @@ class ApiDocsTest {
     void anUnexpectedErrorIsAGeneric500WithARequestId() throws Exception {
         doThrow(new IllegalStateException("database on fire"))
                 .when(parcels)
-                .parcel(anyString());
+                .parcel(anyLong());
 
         http.perform(get("/parcels/P001"))
                 .andExpect(status().isInternalServerError())
@@ -52,5 +54,4 @@ class ApiDocsTest {
                 .andExpect(content().string(
                         Matchers.not(Matchers.containsString("on fire"))));
     }
-
 }
