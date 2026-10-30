@@ -41,3 +41,15 @@ CREATE TABLE IF NOT EXISTS residents (
     name     VARCHAR(80) NOT NULL,
     UNIQUE (tower_id, flat)
 );
+
+-- One row per transition (dropped, code_issued, opened), written in the same transaction as the change.
+-- Insert only: nothing in the app updates or deletes a row. `data` holds the event's facts as JSON text - ids and
+-- facts, never the code or a resident's name.
+CREATE TABLE IF NOT EXISTS events (
+    id        BIGINT AUTO_INCREMENT PRIMARY KEY,
+    tower_id  BIGINT                   NOT NULL REFERENCES towers (id),
+    parcel_id BIGINT                   NOT NULL REFERENCES parcels (id),
+    kind      VARCHAR(20)              NOT NULL,
+    at        TIMESTAMP WITH TIME ZONE NOT NULL,
+    data      VARCHAR(2000)            NOT NULL
+);

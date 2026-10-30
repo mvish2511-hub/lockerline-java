@@ -4,6 +4,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.lockerline.error.NoSuchParcel;
+
 /** One parcel. */
 @RestController
 public class ParcelController {
@@ -16,6 +18,9 @@ public class ParcelController {
 
     @GetMapping("/parcels/{parcelId}")
     public ParcelView parcel(@PathVariable String parcelId) {
-        return parcels.parcel(parcelId);
+        long id = ParcelIds.parse(parcelId)
+                .orElseThrow(() -> new NoSuchParcel(parcelId));
+
+        return parcels.parcel(id);
     }
 }
