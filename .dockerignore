@@ -1,0 +1,10 @@
+# What never goes into the build: history, tests, local databases, build output, secrets
+.git
+.idea
+.vscode
+target
+src/test
+data
+*.mv.db
+*.trace.db
+.env

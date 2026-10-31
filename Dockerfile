@@ -14,6 +14,6 @@ WORKDIR /app
 COPY --from=build /build/target/app.jar app.jar
 COPY seed seed
 # a server inside a container must listen on every interface, or the host cannot reach it
-ENV SERVER_ADDRESS=0.0.0.0
+ENV HOST=0.0.0.0
 EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "app.jar"]
